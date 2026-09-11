@@ -20,7 +20,7 @@ import zipfile
 from huggingface_hub import snapshot_download
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.config import CLASSES, DATA_DIR, TRAIN_SPLIT, SEED  # noqa: E402
+from src.config import CLASSES, CLASSES_FILE, DATA_DIR, TRAIN_SPLIT, SEED, USE_ALL_CLASSES  # noqa: E402
 
 HF_REPO = "quchenyuan/UCF101-ZIP"
 RAW_DIR = os.path.join(os.path.dirname(__file__), "_raw_ucf101")
@@ -58,6 +58,24 @@ def find_class_folder(root: str, class_name: str):
     return None
 
 
+def discover_all_classes(root: str) -> list:
+    """
+    Finds the directory that actually holds the 101 class folders (mirrors
+    nest it at varying depths) by picking the directory with the most
+    subdirectories, then returns those subdirectory names sorted.
+    """
+    best_dir, best_count = None, 0
+    for dirpath, dirnames, _ in os.walk(root):
+        if len(dirnames) > best_count:
+            best_dir, best_count = dirpath, len(dirnames)
+
+    if best_dir is None or best_count < 2:
+        raise RuntimeError("Could not locate UCF101 class folders under the downloaded dataset.")
+
+    print(f"Discovered {best_count} class folders under: {best_dir}")
+    return sorted(os.listdir(best_dir))
+
+
 GROUP_PATTERN = re.compile(r"_g(\d+)_c\d+", re.IGNORECASE)
 
 
@@ -73,10 +91,10 @@ def group_id(filename: str) -> str:
     return match.group(1) if match else filename  # fallback: treat as its own group
 
 
-def build_subset(root: str) -> None:
+def build_subset(root: str, classes: list) -> None:
     random.seed(SEED)
 
-    for class_name in CLASSES:
+    for class_name in classes:
         src_folder = find_class_folder(root, class_name)
         if src_folder is None:
             print(f"[WARN] Could not find class folder for '{class_name}' — skipping.")
@@ -106,10 +124,23 @@ def build_subset(root: str) -> None:
 
         print(f"{class_name}: {len(train_videos)} train / {len(test_videos)} test clips")
 
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(CLASSES_FILE, "w") as f:
+        f.write("\n".join(classes) + "\n")
+
     print(f"\nDone. Subset written to: {DATA_DIR}")
+    print(f"Class list written to: {CLASSES_FILE}")
 
 
 if __name__ == "__main__":
     local_dir = download_full_dataset()
     extracted_root = extract_if_needed(local_dir)
-    build_subset(extracted_root)
+
+    if USE_ALL_CLASSES:
+        classes_to_use = discover_all_classes(extracted_root)
+        print(f"USE_ALL_CLASSES=True — training on all {len(classes_to_use)} discovered classes.")
+    else:
+        classes_to_use = CLASSES
+        print(f"Using fixed subset of {len(classes_to_use)} classes from src/config.py")
+
+    build_subset(extracted_root, classes_to_use)
