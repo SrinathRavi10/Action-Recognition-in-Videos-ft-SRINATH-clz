@@ -12,6 +12,7 @@ Result:
 
 import os
 import random
+import re
 import shutil
 import sys
 import zipfile
@@ -57,10 +58,23 @@ def find_class_folder(root: str, class_name: str):
     return None
 
 
+GROUP_PATTERN = re.compile(r"_g(\d+)_c\d+", re.IGNORECASE)
+
+
+def group_id(filename: str) -> str:
+    """
+    UCF101 filenames look like v_JugglingBalls_g01_c01.avi — clips sharing
+    the same g## come from the same source recording (same actor/background).
+    We must keep every clip from a group together in one split, or the
+    model can "recognize the scene" instead of the action, inflating
+    accuracy through leakage.
+    """
+    match = GROUP_PATTERN.search(filename)
+    return match.group(1) if match else filename  # fallback: treat as its own group
+
+
 def build_subset(root: str) -> None:
     random.seed(SEED)
-    train_dir = os.path.join(DATA_DIR, "train")
-    test_dir = os.path.join(DATA_DIR, "test")
 
     for class_name in CLASSES:
         src_folder = find_class_folder(root, class_name)
@@ -69,9 +83,20 @@ def build_subset(root: str) -> None:
             continue
 
         videos = [f for f in os.listdir(src_folder) if f.lower().endswith((".avi", ".mp4"))]
-        random.shuffle(videos)
-        split_idx = int(len(videos) * TRAIN_SPLIT)
-        train_videos, test_videos = videos[:split_idx], videos[split_idx:]
+
+        # Bucket clips by source group, then split at the GROUP level so no
+        # group's clips end up split across train and test.
+        groups = {}
+        for v in videos:
+            groups.setdefault(group_id(v), []).append(v)
+
+        group_ids = list(groups.keys())
+        random.shuffle(group_ids)
+        split_idx = max(1, int(len(group_ids) * TRAIN_SPLIT))
+        train_group_ids, test_group_ids = group_ids[:split_idx], group_ids[split_idx:]
+
+        train_videos = [v for g in train_group_ids for v in groups[g]]
+        test_videos = [v for g in test_group_ids for v in groups[g]]
 
         for split_name, split_videos in [("train", train_videos), ("test", test_videos)]:
             dst_folder = os.path.join(DATA_DIR, split_name, class_name)
