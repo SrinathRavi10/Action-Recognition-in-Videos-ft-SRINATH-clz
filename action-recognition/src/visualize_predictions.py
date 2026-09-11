@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import torch
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.config import CLASSES, DATA_DIR, FRAME_SIZE, NUM_FRAMES, OUTPUT_DIR, SEED  # noqa: E402
+from src.config import DATA_DIR, FRAME_SIZE, NUM_FRAMES, OUTPUT_DIR, SEED, get_classes  # noqa: E402
 from src.dataset import VideoClipDataset  # noqa: E402
 from src.model import build_model  # noqa: E402
 from src.utils import get_device  # noqa: E402
@@ -33,7 +33,7 @@ def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     ckpt = torch.load(args.checkpoint, map_location=device)
-    classes = ckpt.get("classes", CLASSES)
+    classes = ckpt.get("classes", get_classes())
 
     model = build_model(num_classes=len(classes), freeze_backbone=False).to(device)
     model.load_state_dict(ckpt["model_state"])

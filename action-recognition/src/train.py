@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.config import (  # noqa: E402
-    BATCH_SIZE, CHECKPOINT_DIR, CLASSES, DATA_DIR, FRAME_SIZE,
+    BATCH_SIZE, CHECKPOINT_DIR, DATA_DIR, FRAME_SIZE, get_classes,
     LEARNING_RATE, NUM_EPOCHS, NUM_FRAMES, NUM_WORKERS, SEED, WEIGHT_DECAY,
 )
 from src.dataset import VideoClipDataset  # noqa: E402
@@ -62,11 +62,14 @@ def main():
     print(f"Using device: {device}")
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
+    classes = get_classes()
+    print(f"Training on {len(classes)} classes: {classes}")
+
     train_ds = VideoClipDataset(
-        os.path.join(DATA_DIR, "train"), CLASSES, NUM_FRAMES, FRAME_SIZE, train=True
+        os.path.join(DATA_DIR, "train"), classes, NUM_FRAMES, FRAME_SIZE, train=True
     )
     test_ds = VideoClipDataset(
-        os.path.join(DATA_DIR, "test"), CLASSES, NUM_FRAMES, FRAME_SIZE, train=False
+        os.path.join(DATA_DIR, "test"), classes, NUM_FRAMES, FRAME_SIZE, train=False
     )
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,
                                num_workers=NUM_WORKERS, pin_memory=True)
@@ -74,7 +77,7 @@ def main():
                               num_workers=NUM_WORKERS, pin_memory=True)
     print(f"Train clips: {len(train_ds)} | Test clips: {len(test_ds)}")
 
-    model = build_model(num_classes=len(CLASSES)).to(device)
+    model = build_model(num_classes=len(classes)).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()),
                        lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
@@ -96,7 +99,7 @@ def main():
         if val_acc > best_acc:
             best_acc = val_acc
             ckpt_path = os.path.join(CHECKPOINT_DIR, "best_model.pt")
-            torch.save({"model_state": model.state_dict(), "classes": CLASSES, "val_acc": val_acc}, ckpt_path)
+            torch.save({"model_state": model.state_dict(), "classes": classes, "val_acc": val_acc}, ckpt_path)
             print(f"  ↳ New best model saved ({val_acc:.3f}) -> {ckpt_path}")
 
     print(f"\nTraining complete. Best val accuracy: {best_acc:.3f}")
