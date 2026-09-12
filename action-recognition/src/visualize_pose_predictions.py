@@ -164,24 +164,28 @@ def main():
     chosen = random.sample(all_clips, min(args.num_clips, len(all_clips)))
 
     model_path = ensure_model_downloaded()
-    base_options = mp_python.BaseOptions(model_asset_path=model_path)
-    options = vision.PoseLandmarkerOptions(
-        base_options=base_options,
-        running_mode=vision.RunningMode.VIDEO,
-        num_poses=1,
-    )
 
-    with vision.PoseLandmarker.create_from_options(options) as landmarker:
-        for i, (video_path, true_label) in enumerate(chosen, start=1):
-            pred_idx = predict_clip(model, video_path, device, NUM_FRAMES, FRAME_SIZE)
-            pred_label = classes[pred_idx]
+    for i, (video_path, true_label) in enumerate(chosen, start=1):
+        pred_idx = predict_clip(model, video_path, device, NUM_FRAMES, FRAME_SIZE)
+        pred_label = classes[pred_idx]
 
-            status = "correct" if pred_label == true_label else "WRONG"
-            out_name = f"{i:02d}_true-{true_label}_pred-{pred_label}.mp4"
-            out_path = os.path.join(out_dir, out_name)
+        status = "correct" if pred_label == true_label else "WRONG"
+        out_name = f"{i:02d}_true-{true_label}_pred-{pred_label}.mp4"
+        out_path = os.path.join(out_dir, out_name)
 
-            print(f"[{i}/{len(chosen)}] {os.path.basename(video_path)} "
-                  f"| true: {true_label} | pred: {pred_label} | {status}")
+        print(f"[{i}/{len(chosen)}] {os.path.basename(video_path)} "
+              f"| true: {true_label} | pred: {pred_label} | {status}")
+
+        # A fresh landmarker per clip avoids "timestamp must be monotonically
+        # increasing" errors — each clip's frame timestamps restart at 0, and
+        # the Tasks API tracks timestamps per landmarker instance, not per video.
+        base_options = mp_python.BaseOptions(model_asset_path=model_path)
+        options = vision.PoseLandmarkerOptions(
+            base_options=base_options,
+            running_mode=vision.RunningMode.VIDEO,
+            num_poses=1,
+        )
+        with vision.PoseLandmarker.create_from_options(options) as landmarker:
             annotate_video(landmarker, video_path, out_path, true_label, pred_label)
 
     print(f"\nSaved {len(chosen)} pose-annotated videos to: {out_dir}")
